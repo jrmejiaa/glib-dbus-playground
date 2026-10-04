@@ -1,0 +1,7 @@
+# Generated files
+alarm/generated/
+systemd/generated/
+
+# Build folders (root aggregator and standalone per-step builds)
+build/
+*/build/
