@@ -9,7 +9,7 @@ this page tells the story that connects them.
 
 The goal was always to drive **systemd** over D-Bus. But systemd is a large,
 real service, so I warmed up on a tiny toy interface first, courtesy of 
-Aleksander Morgado, in his presentation of [Introduction to D-Bus](https://aleksander.es/data/GNOMEASIA2014%20-%20Introduction%20to%20DBus.pdf).
+Aleksander Morgado in his presentation of [Introduction to D-Bus](https://aleksander.es/data/GNOMEASIA2014%20-%20Introduction%20to%20DBus.pdf).
 then moved to the real thing. The two steps live side by side:
 
 1. **`alarm/`** — Step 1: the warm-up. A single, tiny D-Bus interface
@@ -36,25 +36,25 @@ and proxy properties of the generated code easily.
 
 ```text
 .
-├── alarm/              Step 1: alarm example (service + client, one interface)
-│   ├── introspect/     hand-authored D-Bus interface description (the source)
-│   ├── generated/      gdbus-codegen output: Proxy + Skeleton (build-time, gitignored)
-│   ├── service/        exports the interface  (implemented)
-│   ├── client/         calls the interface    (implemented)
-│   └── CMakeLists.txt  standalone build
-├── systemd/            Step 2: driving real systemd over D-Bus
-│   ├── introspect/     the systemd Manager interface description (the source)
-│   ├── generated/      gdbus-codegen output: the Manager Proxy (build-time, gitignored)
-│   ├── client/         the D-Bus client + SystemdManager wrapper
-│   ├── daemon/         the dummy daemon + its .service unit template
-│   └── CMakeLists.txt  standalone build (owns the install / unit logic)
+├── alarm/               Step 1: alarm example (service + client, one interface)
+│   ├── introspect/         hand-authored D-Bus interface description (the source)
+│   ├── generated/          gdbus-codegen output: Proxy + Skeleton (build-time, gitignored)
+│   ├── service/            exports the interface  (implemented)
+│   ├── client/             calls the interface    (implemented)
+│   └── CMakeLists.txt      standalone build
+├── systemd/             Step 2: driving real systemd over D-Bus
+│   ├── introspect/         the systemd Manager interface description (the source)
+│   ├── generated/          gdbus-codegen output: the Manager Proxy (build-time, gitignored)
+│   ├── client/             the D-Bus client + SystemdManager wrapper
+│   ├── daemon/             the dummy daemon + its .service unit template
+│   └── CMakeLists.txt      standalone build (owns the install / unit logic)
 ├── cmake/
 │   └── GdbusCodegen.cmake  shared helper: run gdbus-codegen at build time
 ├── docs/
-│   ├── adr/            architecture decision records
-│   └── lessons-learned/ reusable D-Bus / GLib notes gathered along the way
-├── CONTEXT.md          glossary of the domain language used across the repo
-└── CMakeLists.txt      thin aggregator: builds both steps
+│   ├── adr/                architecture decision records
+│   └── lessons-learned/    reusable D-Bus / GLib notes gathered along the way
+├── CONTEXT.md              glossary of the domain language used across the repo
+└── CMakeLists.txt          thin aggregator: builds both steps
 ```
 
 Two terms recur throughout and have precise meanings (see `CONTEXT.md`):
