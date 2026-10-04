@@ -1,0 +1,13 @@
+[Unit]
+Description=Dummy daemon for systemd D-Bus GLib PoC
+Documentation=man:systemd.service(5)
+
+[Service]
+Type=notify
+ExecStart=@DAEMON_PATH@
+TimeoutStartSec=10
+TimeoutStopSec=5
+Restart=no
+
+[Install]
+WantedBy=default.target
