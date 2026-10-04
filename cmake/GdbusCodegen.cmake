@@ -1,4 +1,4 @@
-# gdbus_generate: run gdbus-codegen at build time (see ADR 0005).
+# gdbus_generate: run gdbus-codegen at build time (see ADR 0002).
 #
 #   gdbus_generate(
 #       BASENAME     <name>     # output files <name>.c / <name>.h
