@@ -31,3 +31,7 @@ target_include_directories(alarm_iface PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/genera
 # D-Bus alarm-service (Skeleton).
 add_executable(alarm-service service/main.cpp service/alarm-service.cpp)
 target_link_libraries(alarm-service PRIVATE alarm_iface PkgConfig::GIO)
+
+# D-Bus alarm-client (Proxy).
+add_executable(alarm-client client/main.cpp client/alarm-client.cpp)
+target_link_libraries(alarm-client PRIVATE alarm_iface PkgConfig::GIO)
