@@ -20,8 +20,8 @@ endif()
 # Generate the Manager proxy in-tree (gitignored) from the Introspect XML.
 gdbus_generate(
     BASENAME    gdbus-systemd-manager
-    XML         ${CMAKE_CURRENT_SOURCE_DIR}/introspect/systemd-dbus.xml
-    C_NAMESPACE Dbus
+    XML         ${CMAKE_CURRENT_SOURCE_DIR}/introspect/org.freedesktop.systemd1.Manager.xml
+    C_NAMESPACE GDbus
     IFC_PREFIX  org.freedesktop.
     OUT_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/generated
     OUT_VAR     SYSTEMD_MANAGER_SRC

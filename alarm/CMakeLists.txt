@@ -16,7 +16,7 @@ include(GdbusCodegen)
 gdbus_generate(
     BASENAME    gdbus-alarm
     XML         ${CMAKE_CURRENT_SOURCE_DIR}/introspect/es.aleksander.Alarm.xml
-    C_NAMESPACE Dbus
+    C_NAMESPACE GDbus
     IFC_PREFIX  es.aleksander.
     OUT_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/generated
     OUT_VAR     ALARM_SRC
