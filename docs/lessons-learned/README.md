@@ -17,3 +17,6 @@ model, then service-specific behavior.
     callback signature from the Iface vtable (plus a trailing `user_data`).
 5. [Subscribing to Signals](./005-subscribing-to-dbus-signals.md): why
     connecting a handler is not always enough, and systemd's `Subscribe()`.
+6. [Event Stream Is Lossless](./006-event-stream-is-lossless-pull-races.md):
+    queued D-Bus signals survive a blocked loop, while a fresh `Get` after the
+    fact races the auto-restart — with two runnable reproducers in `scripts/`.

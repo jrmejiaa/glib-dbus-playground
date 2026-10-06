@@ -15,6 +15,15 @@ subscription) per unit watched.
 
 - Monitoring N units means N unit-object subscriptions; obtain each path via
   `GetUnit`/`LoadUnit`.
+- A unit's D-Bus object is an ephemeral view onto a unit systemd currently has
+  **loaded**; it is not the unit's identity. When a unit goes `inactive`, is
+  unreferenced, and is not enabled, systemd garbage-collects it, emits
+  `UnitRemoved`, and the object path disappears. `GetUnit` then fails with
+  `NoSuchUnit`, and re-using the stale path does nothing. Confirmed on systemd 252.
+- Identity is therefore the unit **name**, held by the Manager (which tracks
+  `Restart=`, `NRestarts`, and retry state keyed by name), not the object path. A
+  per-unit watch must be (re)attached each time the unit reloads: resolve the fresh
+  path on the Manager's `UnitNew` for that name and drop the watch on `UnitRemoved`.
 - `ActiveState=failed`/`inactive` detects *process exit*, not *hangs*: an alive-
   but-wedged process needs `WatchdogSec` + `sd_notify(WATCHDOG=1)` or an
   app-level health check. Plain `ActiveState` will not catch it.

@@ -71,3 +71,51 @@ each sub-project's `generated/` directory and is compiled as its own C static
 library that C++ targets link.
 _Avoid_: proxy code, bindings (too narrow — the output carries Proxy *and*
 Skeleton).
+
+**Supervisor**:
+The long-running step-3 process that watches a set of daemons and narrates the
+complete truth of the fleet: what systemd did to each unit and what application
+state each daemon reports. It consumes two interfaces at once: the systemd
+Manager/Unit (to observe lifecycle) and each daemon's own interface (to read its
+State). systemd owns failure-revival; the Supervisor owns clean-stop revival
+(ADR 0007), observes, and coordinates.
+_Avoid_: lifecycle-manager, monitor, systemd-client.
+
+**Revive / Revival**:
+Bringing a dead or stopped daemon back to running. Split by cause in step-3:
+**systemd** revives unclean failures (`Restart=on-failure`); the **Supervisor**
+revives clean stops (`exit(0)`/`SIGTERM`/`systemctl stop`), triggered by
+`UnitRemoved` and issued as `StartUnit(name)` (ADR 0007).
+_Avoid_: restart (ambiguous with systemd's own `Restart=`), resurrect.
+
+**Stall**:
+A daemon that is still alive as a process but has stopped making progress (hung).
+Distinct from death: without intervention `ActiveState` stays `active`. Detected
+by systemd's Watchdog, which kills the wedged process so it surfaces as a normal
+`failed` transition carrying `Result=watchdog`.
+_Avoid_: hang, freeze, deadlock, wedged.
+
+**State**:
+The daemon's own application-level readiness, exposed as an `emits-change`
+property on its D-Bus interface (`uint32` enum: `initializing`, `ready`,
+`degraded`). The Supervisor reads it to know whether a process that systemd
+reports as `active` is actually ready to coordinate — a fact systemd cannot see.
+_Avoid_: status (ambiguous with `ActiveState`/`SubState`), health, Heartbeat.
+
+**Watchdog**:
+systemd's native stall mechanism: `WatchdogSec=` plus the daemon calling
+`sd_notify(WATCHDOG=1)` every `WatchdogSec/2`. If a ping is missed, systemd kills
+and (with `Restart=on-failure`) restarts the unit, setting `Result=watchdog`. This
+is the chosen stall-detection mechanism; the Supervisor observes its effect via
+the event stream rather than detecting stalls itself.
+_Avoid_: using "watchdog" loosely for an app-level liveness ping to the Supervisor.
+
+**Event stream**:
+systemd's D-Bus signals (`UnitNew`/`UnitRemoved` on the Manager, `PropertiesChanged`
+per unit) that the Supervisor consumes as its source of truth. Delivered in order
+and queued on the connection, so a busy loop delays but never drops them. In step-3
+the spine is the value-gated `ActiveState` transition (a coalescing test showed it
+is never hidden, 15/15 at `RestartSec=0`); `UnitNew`/`UnitRemoved` drive proxy
+attach/detach and clean-stop revival. `JobRemoved` is a step-2 concept, not used here
+(ADR 0006).
+_Avoid_: polling, property fetch (the rejected alternative).
