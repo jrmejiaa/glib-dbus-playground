@@ -20,3 +20,9 @@ model, then service-specific behavior.
 6. [Event Stream Is Lossless](./006-event-stream-is-lossless-pull-races.md):
     queued D-Bus signals survive a blocked loop, while a fresh `Get` after the
     fact races the auto-restart — with two runnable reproducers in `scripts/`.
+7. [UnitNew/UnitRemoved Semantics](./007-unitnew-unitremoved-semantics.md): the
+    clean-stop burst is a `systemctl` CLI artifact, the object path is stable, and
+    `UnitRemoved` means "cleanly gone" (never a crash) — three reproducers.
+8. [Sync Proxy Construction Cost](./008-sync-proxy-construction-cost.md): a
+    `FLAGS_NONE` proxy does a blocking `GetAll`; the systemd `Service` interface is
+    303 properties, so one `UnitMonitor` build blocks ~2.5 ms — measured.

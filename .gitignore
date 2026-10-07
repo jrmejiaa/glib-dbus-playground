@@ -1,6 +1,13 @@
+# Python ignore
+__pycache__/
+.ruff._cache/
+*.py[cod]
+*$py.class
+
 # Generated files
 alarm/generated/
 systemd/generated/
+supervisor/generated/
 
 # Build folders (root aggregator and standalone per-step builds)
 build/

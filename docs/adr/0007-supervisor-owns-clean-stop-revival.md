@@ -57,3 +57,54 @@ to tell clean-stop apart from failure.
   of fighting the start limit.
 - The Supervisor must guard against reviving during its own shutdown (do not react
   to `UnitRemoved` once tearing down).
+
+## Revision 2026-10-07 — debounced trigger (refines the "no debounce" stance above)
+
+The original decision above revived on `UnitRemoved` **undebounced**, relying on
+idempotency to absorb the teardown burst. Further measurement (lesson 007) refined
+the trigger mechanism. The core decision is unchanged — the Supervisor revives on
+`UnitRemoved`, systemd owns failure-revival — but the trigger is now **debounced**.
+This section supersedes the "needs no debounce" / "undebounced" wording above.
+
+Three facts, now confirmed (lesson 007), drove the change:
+
+- The `UnitRemoved → UnitNew → …` burst is a **`systemctl` CLI artifact**: a D-Bus
+  `Manager.StopUnit` emits exactly one `UnitRemoved`. (This resolves the earlier
+  "re-check the flap against real template units" caveat — the flap is the tool,
+  not the unit.)
+- A unit's **object path is stable** (deterministic from the name), identical across
+  reload and within a burst — so a `UnitNew` in a debounce window means "same unit,
+  still here," needing no path rebind.
+- `UnitRemoved` **only ever means "cleanly gone"**: a crash + auto-restart emits no
+  `UnitNew`/`UnitRemoved` at all.
+
+Combined with the ~2.5 ms cost of building a `UnitMonitor`'s proxies (lesson 008),
+acting on each raw `UnitRemoved` would needlessly tear down and rebuild proxies
+during the `systemctl` burst. Instead the Supervisor runs a small state machine per
+tracked name, keyed off a short (~50 ms) timer owned by the Supervisor:
+
+```text
+ABSENT          no monitor
+ACTIVE          monitor exists, proxies bound
+PENDING_REMOVAL monitor exists, removal timer armed
+
+UnitNew  in ABSENT             -> build monitor (sync)            -> ACTIVE
+UnitNew  in ACTIVE             -> no-op (path stable)             -> ACTIVE
+UnitNew  in PENDING_REMOVAL    -> cancel timer (it is back)       -> ACTIVE
+UnitRemoved in ACTIVE          -> arm ~50 ms timer                -> PENDING_REMOVAL
+UnitRemoved in PENDING_REMOVAL -> re-arm timer                    -> PENDING_REMOVAL
+timer fires in PENDING_REMOVAL -> tear down monitor; StartUnit    -> ABSENT
+```
+
+The timer runs on the main loop, so nothing blocks. The `systemctl` burst
+(`R,N,R,N,R`) walks `ACTIVE→PENDING→ACTIVE→PENDING→ACTIVE→PENDING→(timer)→ABSENT`,
+yielding **one** teardown and **one** revive with **zero** intermediate builds. A
+genuine `exit(0)` (single `UnitRemoved`) walks `ACTIVE→PENDING→(timer)→ABSENT`
+identically, so clean stop and clean self-exit are handled the same way. Because the
+build happens only on a genuine appearance, the ~2.5 ms sync construction is never
+multiplied by the burst, so plain sync construction in the `UnitNew` handler is
+acceptable at PoC scale (lesson 008).
+
+The window (~50 ms) is a `constexpr` constant: ~100× the measured sub-millisecond
+burst span, yet imperceptible as revival latency. The idempotency and
+shutdown-guard consequences above still hold.

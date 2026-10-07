@@ -31,3 +31,19 @@ subscription) per unit watched.
   `org.freedesktop.DBus.Properties` interface (no second `gdbus-codegen`), or
   ~4h generating a typed Unit proxy. The introspected XML currently contains
   only the Manager interface, so the typed route requires a second codegen.
+
+## Clarification 2026-10-07 — the object path value is stable
+
+Measurement (lesson 007) sharpens the "resolve the fresh path on `UnitNew`" wording
+above: the object **path value is not fresh — it is deterministic and stable**. A
+unit's path is `/org/freedesktop/systemd1/unit/<escaped-name>`, derived from the
+name, so it is identical every time the unit loads and for every event within a
+`systemctl` teardown burst.
+
+What is ephemeral is the **object** at that path, not the path string: when the unit
+is unloaded the object is destroyed (`GetUnit` fails, calls on the path fail), and on
+reload a *new* object appears at the *same* path. Re-attaching on `UnitNew` is still
+required — not to discover a new path, but to rebind a proxy whose cache must reflect
+the freshly-created object (a stale proxy would carry the previous object's cached
+properties). Identity remains the unit **name**; the stable path is a convenience,
+not the identity.
