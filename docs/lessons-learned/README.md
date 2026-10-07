@@ -26,3 +26,7 @@ model, then service-specific behavior.
 8. [Sync Proxy Construction Cost](./008-sync-proxy-construction-cost.md): a
     `FLAGS_NONE` proxy does a blocking `GetAll`; the systemd `Service` interface is
     303 properties, so one `UnitMonitor` build blocks ~2.5 ms — measured.
+9. [GetAll Resurrects an Inactive Unit](./009-getall-resurrects-inactive-unit.md):
+    a `FLAGS_NONE` proxy's construction `GetAll` loads a dead unit (`UnitNew`) which
+    systemd GCs again (`UnitRemoved`), turning a naive observer into an infinite
+    loop — why the clean-stop debounce is correctness-critical.

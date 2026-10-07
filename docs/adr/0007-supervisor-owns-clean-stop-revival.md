@@ -108,3 +108,27 @@ acceptable at PoC scale (lesson 008).
 The window (~50 ms) is a `constexpr` constant: ~100× the measured sub-millisecond
 burst span, yet imperceptible as revival latency. The idempotency and
 shutdown-guard consequences above still hold.
+
+### The debounce is correctness-critical, not just efficiency (lesson 009)
+
+The stronger reason for the debounce — beyond avoiding needless build/teardown — is
+that acting on a raw `UnitRemoved` by tearing down and then rebuilding on the burst's
+`UnitNew` **resurrects the dead unit**. Building a `FLAGS_NONE` proxy issues a
+`GetAll`, which forces systemd to load the inactive unit (`UnitNew`) and then GC it
+again (`UnitRemoved`); the Supervisor reacts by rebuilding, and the two feed an
+**infinite loop** (lesson 009, proven in isolation: one `GetAll` on a confirmed-gone
+unit emits a `UnitNew`/`UnitRemoved` pair). A passive observer that never calls
+`GetAll` settles; the proxy build is the engine of the loop.
+
+The debounce stops this because the monitor is **not torn down until the timer
+fires**: a `UnitNew` during the burst finds the monitor present and does not rebuild,
+so no `GetAll` is issued and nothing is resurrected. Crucially, **this correctness
+property is independent of the window value** — it holds for any positive window,
+because what breaks the loop is "do not rebuild while a removal is pending," not the
+particular delay. The window only tunes revival latency.
+
+As defense-in-depth, `G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES` removes the
+construction `GetAll` entirely (no resurrection, measured), at the cost of the
+initial property snapshot (the cache then fills from the first `PropertiesChanged`).
+The debounce is still what guarantees the proxy is only built on a genuinely-present
+unit, so the retained `FLAGS_NONE` `GetAll` is safe.
