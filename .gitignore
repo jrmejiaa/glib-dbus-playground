@@ -12,3 +12,4 @@ supervisor/generated/
 # Build folders (root aggregator and standalone per-step builds)
 build/
 */build/
+tmp-tests/
