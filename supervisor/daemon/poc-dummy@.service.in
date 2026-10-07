@@ -1,0 +1,23 @@
+[Unit]
+Description=PoC dummy daemon instance %i (step-3 Supervisor)
+Documentation=man:systemd.service(5)
+# After StartLimitBurst failures within the interval the unit rests in `failed`
+# with Result=start-limit-hit; StartLimitAction=none means systemd stops there and
+# the Supervisor observes the give-up rather than escalating (ADR 0006/0007).
+StartLimitIntervalSec=30
+StartLimitBurst=5
+StartLimitAction=none
+
+[Service]
+Type=notify
+# %i is the template instance id, passed to the daemon to select es.poc.Daemon<N>.
+ExecStart=@DAEMON_PATH@ %i
+# systemd owns failure-revival; the daemon pings sd_notify(WATCHDOG=1) at
+# WatchdogSec/2 and a missed ping surfaces as Result=watchdog.
+WatchdogSec=5s
+Restart=on-failure
+RestartSec=1s
+TimeoutStartSec=10
+
+[Install]
+WantedBy=default.target
