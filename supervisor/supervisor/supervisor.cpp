@@ -28,6 +28,28 @@ constexpr const char *JOB_MODE = "replace";
 /** @brief JobRemoved result string denoting success. */
 constexpr const char *RESULT_DONE = "done";
 
+/**
+ * @brief Debounce window (ms) before acting on a tracked unit's removal (ADR 0007).
+ *
+ * Any positive value is correct: what breaks the resurrection loop is not tearing
+ * down/rebuilding while a removal is pending, not the particular delay. This only
+ * tunes revival latency; the measured systemctl burst is sub-millisecond.
+ */
+constexpr guint REMOVAL_DEBOUNCE_MS = 50;
+
+/**
+ * @brief Invalid source id for a timer made with Glib on the mainloop
+ * 
+ */
+constexpr guint INVALID_TIMER_ID = 0;
+
+/** @brief Heap context carried by a removal debounce timer: which unit, and the Supervisor. */
+struct RemovalTimerCtx
+{
+    Supervisor *pSelf;
+    std::string Unit;
+};
+
 Supervisor::Supervisor(GMainLoop *pLoop, std::set<std::string> services)
     : m_pLoop(pLoop),
       m_Services(services),
@@ -51,7 +73,20 @@ void Supervisor::run()
 void Supervisor::terminate()
 {
     LOG_ENTER();
-    log("  - Shutting down alarm server, getting signal to close");
+    m_ShuttingDown = true;
+
+    /* Cancel any pending removal timers so none fire into a tearing-down Supervisor.
+       g_source_remove also triggers freeRemovalCtx, releasing each timer context. */
+    for (auto &entry : m_UnitsByService)
+    {
+        if (entry.second->RemovalTimerId != INVALID_TIMER_ID)
+        {
+            g_source_remove(entry.second->RemovalTimerId);
+            entry.second->RemovalTimerId = INVALID_TIMER_ID;
+        }
+    }
+
+    log("  - Shutting down, getting signal to close");
     g_main_loop_quit(m_pLoop);
 }
 
@@ -62,8 +97,10 @@ void Supervisor::finish(const std::string &context, GError *pError)
     {
         std::fprintf(stderr, "ERROR during %s: pError: (code=%i, message=%s)\n", context.c_str(), pError->code, pError->message);
         g_error_free(pError);
-        m_ExitCode = 1;
     }
+
+    std::fprintf(stderr, "ERROR during %s\n", context.c_str());
+    m_ExitCode = 1;
     terminate();
 }
 
@@ -110,7 +147,6 @@ void Supervisor::onDbusProxyReady(GObject * /*source*/, GAsyncResult *res, gpoin
     auto   *self   = static_cast<Supervisor *>(userData);
     GError *pError = nullptr;
 
-    // finish() returns the interface-typed pointer to the concrete proxy GObject.
     self->m_pManager = gdbus_systemd1_manager_proxy_new_finish(res, &pError);
     if (self->m_pManager == nullptr)
     {
@@ -168,24 +204,39 @@ void Supervisor::onStartUnit(GObject *source, GAsyncResult *res, gpointer userDa
 }
 
 /* static */
-void Supervisor::onUnitNew(GDbusSystemd1Manager *object, const gchar *unit, const gchar *objectPath, gpointer userData)
+void Supervisor::onUnitNew(GDbusSystemd1Manager * /*object*/, const gchar *unit, const gchar *objectPath, gpointer userData)
 {
     LOG_ENTER();
-    auto   *self   = static_cast<Supervisor *>(userData);
-    GError *pError = nullptr;
+    auto *self = static_cast<Supervisor *>(userData);
     if (!self->m_Services.contains(unit))
     {
         log("  - Ignoring unit '%s' not in services to supervised", unit);
         return;
     }
 
-    if (self->m_UnitsByService.contains(unit))
+    auto it = self->m_UnitsByService.find(unit);
+    if (it != self->m_UnitsByService.end())
     {
-        log("  - Ignoring unit '%s', already exists on the map (likely burst systemdctl operation)", unit);
+        /* PENDING_REMOVAL: the unit reappeared within the debounce window (a
+           systemctl burst, or it never really left) -> cancel the pending teardown. */
+        if (it->second->RemovalTimerId != INVALID_TIMER_ID)
+        {
+            g_source_remove(it->second->RemovalTimerId);
+            it->second->RemovalTimerId = INVALID_TIMER_ID;
+            log("  - UnitNew cancelled the pending removal of '%s'", unit);
+            return;
+        }
+
+        /* ACTIVE: already monitored. Do NOT rebuild. The object path is stable, and
+           a GetAll on a not-live unit would resurrect it (lesson 009). */
+        log("  - Ignoring UnitNew for '%s', already monitored", unit);
         return;
     }
 
-    log("  - Unit='%s' detected on callback. Getting Unit and Service proxys to create UnitMonitor object", unit);
+    /* ABSENT: a genuine appearance of a live unit -> build the monitor. The sync
+       proxy GetAll is safe here because the unit is present. */
+    GError *pError = nullptr;
+    log("  - Unit='%s' detected. Building Unit and Service proxys for a UnitMonitor", unit);
     GDbusSystemd1Unit *pUnit =
         gdbus_systemd1_unit_proxy_new_sync(self->m_pConnection, G_DBUS_PROXY_FLAGS_NONE, BUS_NAME, objectPath, nullptr, &pError);
     if (!pUnit)
@@ -198,29 +249,75 @@ void Supervisor::onUnitNew(GDbusSystemd1Manager *object, const gchar *unit, cons
         gdbus_systemd1_service_proxy_new_sync(self->m_pConnection, G_DBUS_PROXY_FLAGS_NONE, BUS_NAME, objectPath, nullptr, &pError);
     if (!pService)
     {
+        g_object_unref(pUnit);
         self->finish("onUnitNew: Service proxy fails", pError);
         return;
     }
 
-    log("  - Creating UnitMonitor object, after sync proxys succeeded", unit);
-    std::shared_ptr<UnitMonitor> pUnitMonitor = std::make_shared<UnitMonitor>(pUnit, pService, unit, objectPath);
-    self->m_UnitsByService.insert(std::make_pair(unit, std::move(pUnitMonitor)));
+    auto pUnitMonitor = std::make_shared<UnitMonitor>(pUnit, pService, unit, objectPath);
+    self->m_UnitsByService.insert(std::make_pair(unit, std::make_shared<TrackedUnit>(std::move(pUnitMonitor), 0)));
 }
 
 /* static */
-void Supervisor::onUnitRemoved(GDbusSystemd1Manager *object, const gchar *unit, const gchar *objectPath, gpointer userData)
+void Supervisor::onUnitRemoved(GDbusSystemd1Manager * /*object*/, const gchar *unit, const gchar * /*objectPath*/, gpointer userData)
 {
     LOG_ENTER();
     auto *self = static_cast<Supervisor *>(userData);
 
     auto it = self->m_UnitsByService.find(unit);
+    if (it == self->m_UnitsByService.end())
+    {
+        log("  - Ignoring UnitRemoved for '%s', not monitored", unit);
+        return;
+    }
+
+    auto pTrackUnit = it->second;
+    if (pTrackUnit->RemovalTimerId != INVALID_TIMER_ID)
+    {
+        log("  - Already PENDING_REMOVAL, leave the running timer (no-op) for '%s'", unit);
+        return;
+    }
+
+    /* ACTIVE -> PENDING_REMOVAL: debounce. Do not tear down or build anything now;
+       a proxy GetAll on a departing unit would resurrect it and loop (lesson 009).
+       freeRemovalCtx releases pCtx whether the timer fires or is cancelled. */
+    log("  - UnitRemoved for '%s'; arming %u ms debounce before teardown/revive", unit, REMOVAL_DEBOUNCE_MS);
+    auto *pCtx = new RemovalTimerCtx{self, unit};
+    pTrackUnit->RemovalTimerId =
+        g_timeout_add_full(G_PRIORITY_DEFAULT, REMOVAL_DEBOUNCE_MS, &Supervisor::onRemovalSettled, pCtx, &Supervisor::freeRemovalCtx);
+}
+
+/* static */
+gboolean Supervisor::onRemovalSettled(gpointer userData)
+{
+    LOG_ENTER();
+    auto *pCtx = static_cast<RemovalTimerCtx *>(userData);
+    auto *self = pCtx->pSelf;
+
+    auto it = self->m_UnitsByService.find(pCtx->Unit);
     if (it != self->m_UnitsByService.end())
     {
-        log("  - UnitMonitor object for unit '%s' present, erasing object", unit, objectPath);
+        /* Clear the id before erasing: returning G_SOURCE_REMOVE destroys this
+           source, so it must never be g_source_remove()d again. */
+        it->second->RemovalTimerId = INVALID_TIMER_ID;
+        log("  - '%s' settled gone; tearing down monitor and reviving", pCtx->Unit.c_str());
         self->m_UnitsByService.erase(it);
+
+        if (!self->m_ShuttingDown)
+        {
+            gdbus_systemd1_manager_call_start_unit(self->m_pManager, pCtx->Unit.c_str(), JOB_MODE, nullptr, &Supervisor::onStartUnit, self);
+        }
     }
     else
     {
-        log("  - UnitMonitor object is not present for unit '%s', ignoring callback", unit, objectPath);
+        self->finish("  - We were fired by a unit that do not longer exists on the map, why!?", nullptr);
     }
+
+    return G_SOURCE_REMOVE;
+}
+
+/* static */
+void Supervisor::freeRemovalCtx(gpointer userData)
+{
+    delete static_cast<RemovalTimerCtx *>(userData); /* runs on both fire and cancel */
 }

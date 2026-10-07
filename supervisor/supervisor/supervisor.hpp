@@ -59,6 +59,17 @@ protected:  // async static callback methods
     static void onUnitNew(GDbusSystemd1Manager *object, const gchar *id, const gchar *unitName, gpointer userData);
     static void onUnitRemoved(GDbusSystemd1Manager *object, const gchar *id, const gchar *unitName, gpointer userData);
 
+    /**
+     * @brief Fires when a tracked unit's removal debounce elapses un-cancelled.
+     *
+     * Tears down the monitor and revives the unit (unless shutting down). One-shot:
+     * returns G_SOURCE_REMOVE. See ADR 0007.
+     */
+    static gboolean onRemovalSettled(gpointer userData);
+
+    /** @brief GDestroyNotify that frees a RemovalCtx when its timer fires or is cancelled. */
+    static void freeRemovalCtx(gpointer userData);
+
 protected:  // Intern methods
 
     /**
@@ -72,7 +83,19 @@ protected:  // Intern methods
 
 protected:  // Attributes
 
-    typedef std::map<std::string, std::shared_ptr<UnitMonitor>> unit_monitor_map_t;
+    /**
+     * @brief Per-tracked-unit state: the monitor and its pending removal timer.
+     *
+     * RemovalTimerId distinguishes the two live states: 0 means ACTIVE (no
+     * pending removal); non-zero means PENDING_REMOVAL (debounce timer armed).
+     */
+    struct TrackedUnit
+    {
+        std::shared_ptr<UnitMonitor> pMonitor;        ///< The Unit+Service proxies.
+        guint                        RemovalTimerId;  ///< 0 = ACTIVE; non-zero = PENDING_REMOVAL.
+    };
+
+    typedef std::map<std::string, std::shared_ptr<TrackedUnit>> unit_monitor_map_t;
 
     GMainLoop            *m_pLoop;  ///< Not owned.
     GDBusConnection      *m_pConnection;
@@ -80,7 +103,8 @@ protected:  // Attributes
 
     std::set<std::string> m_Services;
     unit_monitor_map_t    m_UnitsByService;
-    int                   m_ExitCode;  ///< Final process exit code.
+    bool                  m_ShuttingDown = false;  ///< Suppresses revival during teardown.
+    int                   m_ExitCode;              ///< Final process exit code.
 };
 
 #endif  // POC_SUPERVISOR_HPP
