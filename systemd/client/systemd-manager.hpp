@@ -2,10 +2,9 @@
 #define POC_SYSTEMD_MANAGER_HPP
 
 #include <string>
-
 #include <glib.h>
 
-#include "gdbus-systemd-manager.h"
+#include <gdbus-systemd-manager.h>
 
 /**
  * @brief Drives the systemd Manager over D-Bus through the GLib-generated proxy.
