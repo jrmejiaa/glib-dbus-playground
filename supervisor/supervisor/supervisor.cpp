@@ -7,14 +7,11 @@
 
 #define LOG_ENTER() log(__PRETTY_FUNCTION__)
 
-/*
- * The Manager is published under the same well-known name and object path on
- * both the system and the user (session) bus; only the bus type and the objectPath
- * install location differ. See ADR 0001 for why the PoC targets the user
- * instance.
- */
-constexpr GBusType    BUS_TYPE    = G_BUS_TYPE_SESSION;
-constexpr const char *BUS_NAME    = "org.freedesktop.systemd1";
+/** @brief D-Bus type: the PoC targets the user/session instance (ADR 0001). */
+constexpr GBusType BUS_TYPE = G_BUS_TYPE_SESSION;
+/** @brief Well-known bus name of the systemd Manager. */
+constexpr const char *BUS_NAME = "org.freedesktop.systemd1";
+/** @brief Object path of the systemd Manager. */
 constexpr const char *OBJECT_PATH = "/org/freedesktop/systemd1";
 
 /**
@@ -37,17 +34,14 @@ constexpr const char *RESULT_DONE = "done";
  */
 constexpr guint REMOVAL_DEBOUNCE_MS = 50;
 
-/**
- * @brief Invalid source id for a timer made with Glib on the mainloop
- * 
- */
+/** @brief Sentinel GLib source id meaning "no timer pending" (g_timeout_add never returns 0). */
 constexpr guint INVALID_TIMER_ID = 0;
 
 /** @brief Heap context carried by a removal debounce timer: which unit, and the Supervisor. */
 struct RemovalTimerCtx
 {
-    Supervisor *pSelf;
-    std::string Unit;
+    Supervisor *pSelf;  ///< The Supervisor that armed the timer; not owned.
+    std::string Unit;   ///< The tracked unit name this timer acts on.
 };
 
 Supervisor::Supervisor(GMainLoop *pLoop, std::set<std::string> services)
@@ -84,13 +78,22 @@ void Supervisor::terminate()
             g_source_remove(entry.second->RemovalTimerId);
             entry.second->RemovalTimerId = INVALID_TIMER_ID;
         }
+
+        GError *pError = nullptr;
+        gdbus_systemd1_manager_call_stop_unit_sync(m_pManager, entry.first.c_str(), JOB_MODE, nullptr, nullptr, &pError);
+        if (pError)
+        {
+            std::fprintf(stderr, "ERROR during stop sync of '%s': (code=%i, message=%s)\n", entry.first.c_str(), pError->code, pError->message);
+            g_error_free(pError);
+            pError = nullptr;
+        }
     }
 
     log("  - Shutting down, getting signal to close");
     g_main_loop_quit(m_pLoop);
 }
 
-void Supervisor::finish(const std::string &context, GError *pError)
+void Supervisor::terminateOnError(const std::string &context, GError *pError)
 {
     LOG_ENTER();
     if (pError)
@@ -117,6 +120,50 @@ void Supervisor::log(const char *pFormat, ...)
     std::fflush(stdout);
 }
 
+/* ######################################## Interface IUnitMonitorEventSink ######################################### */
+
+void Supervisor::onSignalFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onCoreDumpFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onWatchdogFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onExitCodeFailure(const std::string unitName, const int restarts, const int exitCode)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onStartLimitHitFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onTimeoutFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onResourcesFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+void Supervisor::onOomKillFailure(const std::string unitName, const int restarts)
+{
+    LOG_ENTER();
+}
+
+/* ############################################ Internal async callbacks ############################################ */
+
 /* static */
 void Supervisor::onGDbusConnectionReady(GObject *source_object, GAsyncResult *res, gpointer userData)
 {
@@ -136,7 +183,7 @@ void Supervisor::onGDbusConnectionReady(GObject *source_object, GAsyncResult *re
     }
     else
     {
-        self->finish("onGDbusConnectionReady", pError);
+        self->terminateOnError("onGDbusConnectionReady", pError);
     }
 }
 
@@ -150,7 +197,7 @@ void Supervisor::onDbusProxyReady(GObject * /*source*/, GAsyncResult *res, gpoin
     self->m_pManager = gdbus_systemd1_manager_proxy_new_finish(res, &pError);
     if (self->m_pManager == nullptr)
     {
-        self->finish("onDbusProxyReady", pError);
+        self->terminateOnError("onDbusProxyReady", pError);
         return;
     }
 
@@ -167,7 +214,7 @@ void Supervisor::onSubscribeDone(GObject * /*source*/, GAsyncResult *res, gpoint
 
     if (!gdbus_systemd1_manager_call_subscribe_finish(self->m_pManager, res, &pError))
     {
-        self->finish("onSubscribeDone", pError);
+        self->terminateOnError("onSubscribeDone", pError);
         return;
     }
 
@@ -199,7 +246,7 @@ void Supervisor::onStartUnit(GObject *source, GAsyncResult *res, gpointer userDa
     }
     else
     {
-        self->finish("onStartUnit, job has not been made for startUnit", pError);
+        self->terminateOnError("onStartUnit, job has not been made for startUnit", pError);
     }
 }
 
@@ -241,7 +288,7 @@ void Supervisor::onUnitNew(GDbusSystemd1Manager * /*object*/, const gchar *unit,
         gdbus_systemd1_unit_proxy_new_sync(self->m_pConnection, G_DBUS_PROXY_FLAGS_NONE, BUS_NAME, objectPath, nullptr, &pError);
     if (!pUnit)
     {
-        self->finish("onUnitNew: Unit proxy fails", pError);
+        self->terminateOnError("onUnitNew: Unit proxy fails", pError);
         return;
     }
 
@@ -250,11 +297,11 @@ void Supervisor::onUnitNew(GDbusSystemd1Manager * /*object*/, const gchar *unit,
     if (!pService)
     {
         g_object_unref(pUnit);
-        self->finish("onUnitNew: Service proxy fails", pError);
+        self->terminateOnError("onUnitNew: Service proxy fails", pError);
         return;
     }
 
-    auto pUnitMonitor = std::make_shared<UnitMonitor>(pUnit, pService, unit, objectPath);
+    auto pUnitMonitor = std::make_shared<UnitMonitor>(pUnit, pService, unit, objectPath, self);
     self->m_UnitsByService.insert(std::make_pair(unit, std::make_shared<TrackedUnit>(std::move(pUnitMonitor), 0)));
 }
 
@@ -310,7 +357,7 @@ gboolean Supervisor::onRemovalSettled(gpointer userData)
     }
     else
     {
-        self->finish("  - We were fired by a unit that do not longer exists on the map, why!?", nullptr);
+        self->terminateOnError("  - We were fired by a unit that do not longer exists on the map, why!?", nullptr);
     }
 
     return G_SOURCE_REMOVE;

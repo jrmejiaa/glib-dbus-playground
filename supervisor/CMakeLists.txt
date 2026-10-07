@@ -73,6 +73,7 @@ add_executable(supervisor
     supervisor/main.cpp
     supervisor/supervisor.cpp
     supervisor/unit-monitor.cpp
+    supervisor/systemd-enums.cpp
 )
 target_link_libraries(supervisor PRIVATE systemd_manager_iface systemd_unit_iface poc_daemon_iface PkgConfig::GIO)
 

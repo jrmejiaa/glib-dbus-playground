@@ -1,26 +1,3 @@
-/**
- * @mainpage Supervisor PoC — dummy daemon
- *
- * @section daemon_overview Dummy daemon
- *
- * A supervised daemon for step-3. It exports its own D-Bus interface
- * (@c es.poc.Daemon, a single @c State property) so the Supervisor can read
- * application-level readiness that systemd cannot see, and it participates in
- * systemd's lifecycle as a @c Type=notify service with a watchdog.
- *
- * @code
- *   own name es.poc.Daemon<N>  -> export skeleton (State=initializing)
- *     -> after init delay: State=ready + sd_notify(READY=1) + start watchdog
- *     -> ping sd_notify(WATCHDOG=1) every WATCHDOG_USEC/2
- *   SIGUSR1 -> State=degraded + exit(N)   (clear application error)
- *   SIGTERM -> clean stop (exit 0)
- * @endcode
- *
- * The sd_notify protocol is implemented by hand (no libsystemd dependency):
- * systemd puts an AF_UNIX datagram address in NOTIFY_SOCKET and the service
- * sendto()s newline-free "KEY=value" assignments to it.
- */
-
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -65,13 +42,14 @@ enum class state_t : guint
  */
 class UniqueFd
 {
-public:
+public:  // Construction and access
 
-    /** @brief Take ownership of an open (or invalid, < 0) descriptor. */
+    /** @brief Takes ownership of an open (or invalid, < 0) descriptor. */
     explicit UniqueFd(int fd)
         : m_Fd(fd)
     {}
 
+    /** @brief Closes the descriptor if it is valid. */
     ~UniqueFd()
     {
         if (m_Fd >= 0)
@@ -89,9 +67,9 @@ public:
     /** @brief Whether the descriptor is valid (>= 0). */
     bool valid() const { return m_Fd >= 0; }
 
-private:
+private:  // Attributes
 
-    int m_Fd;
+    int m_Fd;  ///< The owned descriptor, or < 0 when invalid.
 };
 
 /**
@@ -104,54 +82,101 @@ private:
  */
 class DummyDaemon
 {
-public:
+public:  // Construction and flow
 
     /**
-     * @brief Construct the daemon for a given template instance id.
+     * @brief Constructs the daemon for a given template instance id.
      * @param pLoop        The GMainLoop the daemon runs on. Not owned.
      * @param rInstanceId  The systemd template instance id (%i), selecting the
      *                     well-known name es.poc.Daemon<id>.
      */
     DummyDaemon(GMainLoop *pLoop, const std::string &rInstanceId);
 
+    /** @brief Removes pending timers, releases the bus name, and unrefs the skeleton. */
     ~DummyDaemon();
 
     DummyDaemon(const DummyDaemon &)            = delete;
     DummyDaemon &operator=(const DummyDaemon &) = delete;
 
     /**
-     * @brief Begin owning the bus name; export and readiness follow via callbacks.
+     * @brief Begins owning the bus name; export and readiness follow via callbacks.
      */
     void run();
 
     /** @brief Process exit code, meaningful after the loop returns. */
     int exitCode() const { return m_ExitCode; }
 
-private:
+private:  // Internal methods
 
-    /** @brief Write a timestamped line to stderr (captured by the journal). */
+    /** @brief Writes a timestamped line to stderr (captured by the journal). */
     static void logLine(const std::string &rMsg);
 
-    /** @brief Set the State property, which emits PropertiesChanged to the Supervisor. */
+    /** @brief Sets the State property, which emits PropertiesChanged to the Supervisor. */
     void setState(state_t state);
 
     /**
-     * @brief Hand-rolled sd_notify: send a "KEY=value" assignment to NOTIFY_SOCKET.
+     * @brief Sends a "KEY=value" assignment to NOTIFY_SOCKET (hand-rolled sd_notify).
      * @param rPayload  The assignment to send (e.g. "READY=1", "WATCHDOG=1").
      * @return True if the datagram was sent; false if not under notify or on error.
      */
     bool notify(const std::string &rPayload);
 
-    /** @brief Start the watchdog pinger if WATCHDOG_USEC is set by systemd. */
+    /** @brief Starts the watchdog pinger if WATCHDOG_USEC is set by systemd. */
     void startWatchdog();
 
-    static void     onBusAcquired(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
-    static void     onNameAcquired(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
-    static void     onNameLost(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
+    /**
+     * @brief Exports the skeleton once the bus connection is acquired.
+     * @param pConnection  The acquired connection.
+     * @param pName        The acquired bus name (unused).
+     * @param pUserData    The DummyDaemon instance.
+     */
+    static void onBusAcquired(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
+
+    /**
+     * @brief Schedules the init delay once the well-known name is acquired.
+     * @param pConnection  The connection (unused).
+     * @param pName        The acquired well-known name.
+     * @param pUserData    The DummyDaemon instance.
+     */
+    static void onNameAcquired(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
+
+    /**
+     * @brief Handles failure to connect to the bus or to own the well-known name.
+     * @param pConnection  The connection, or nullptr if the bus could not be reached.
+     * @param pName        The lost name.
+     * @param pUserData    The DummyDaemon instance.
+     */
+    static void onNameLost(GDBusConnection *pConnection, const gchar *pName, gpointer pUserData);
+
+    /**
+     * @brief Marks the daemon ready after the init delay: State=ready, READY=1, watchdog.
+     * @param pUserData  The DummyDaemon instance.
+     * @return G_SOURCE_REMOVE; the init timer is one-shot.
+     */
     static gboolean onInitComplete(gpointer pUserData);
+
+    /**
+     * @brief Sends one watchdog ping.
+     * @param pUserData  The DummyDaemon instance.
+     * @return G_SOURCE_CONTINUE; the pinger keeps firing.
+     */
     static gboolean onWatchdogPing(gpointer pUserData);
+
+    /**
+     * @brief Handles SIGTERM: notifies STOPPING and quits the loop for a clean stop.
+     * @param pUserData  The DummyDaemon instance.
+     * @return G_SOURCE_REMOVE.
+     */
     static gboolean onSigterm(gpointer pUserData);
+
+    /**
+     * @brief Handles SIGUSR1: sets State=degraded, flushes it to the bus, then exits non-zero.
+     * @param pUserData  The DummyDaemon instance.
+     * @return G_SOURCE_REMOVE (not reached; the handler calls exit).
+     */
     static gboolean onSigusr1(gpointer pUserData);
+
+private:  // Attributes
 
     GMainLoop       *m_pLoop;          ///< Not owned.
     PocDaemon       *m_pSkeleton;      ///< Owned; unref in dtor.
@@ -383,6 +408,12 @@ void DummyDaemon::run()
     logLine(std::string("owning name ") + m_WellKnownName);
 }
 
+/**
+ * @brief Runs one daemon instance for the template id in argv[1].
+ * @param argc  Argument count.
+ * @param argv  Arguments; argv[1] is the systemd template instance id (%i).
+ * @return The daemon's exit code.
+ */
 int main(int argc, char *argv[])
 {
     /* The template unit passes %i as argv[1], selecting the well-known name. */

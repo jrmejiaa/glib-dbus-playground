@@ -1,3 +1,29 @@
+/**
+ * @mainpage Supervisor PoC (step-3)
+ *
+ * @section overview Overview
+ *
+ * A long-running Supervisor that observes a fleet of dummy daemons over D-Bus and
+ * narrates the complete truth of each one. It starts the daemons on launch, then
+ * watches systemd's per-unit Unit/Service state and classifies every failure.
+ *
+ * @section revival Revival ownership
+ *
+ * systemd owns failure-revival (@c Restart=on-failure plus the watchdog); the
+ * Supervisor owns clean-stop revival, reacting to a debounced @c UnitRemoved and
+ * re-issuing @c StartUnit (ADR 0007).
+ *
+ * @section flow Startup flow
+ *
+ * @code
+ *   g_bus_get -> Manager proxy -> Subscribe()
+ *     -> connect UnitNew/UnitRemoved -> StartUnit each supervised unit
+ *   UnitNew(tracked)     -> build a UnitMonitor (Unit+Service proxies)
+ *   ActiveState=failed   -> classify Result -> IUnitMonitorEventSink callback
+ *   UnitRemoved(tracked) -> debounce -> settled gone -> revive
+ * @endcode
+ */
+
 #include <csignal>
 #include <memory>
 #include <glib.h>
@@ -17,14 +43,18 @@
 Supervisor *gp_Supervisor = nullptr;
 
 /**
- * @brief POSIX handler for SIGINT/SIGTERM: ask the server to stop its loop.
- * @param sig_num The delivered signal number (unused).
+ * @brief POSIX handler for SIGINT/SIGTERM: asks the Supervisor to stop its loop.
+ * @param sig_num  The delivered signal number (unused).
  */
 void signalHandler(int sig_num)
 {
     gp_Supervisor->terminate();
 }
 
+/**
+ * @brief Builds the Supervisor, installs the signal handlers, and runs the loop.
+ * @return The Supervisor's exit code: 0 on success, non-zero on failure.
+ */
 int main()
 {
     std::fprintf(stdout, "Starting supervisor daemon\n");

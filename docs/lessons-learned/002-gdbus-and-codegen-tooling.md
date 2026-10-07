@@ -116,3 +116,29 @@ and a handler that never fires, because the name is matched as a plain string.
 The output is C. Build it as its own static library with the C compiler and link
 it into C++ targets; its header is wrapped in `extern "C"`, so including it from
 C++ is safe. See the project `CMakeLists.txt` and the C/C++ steering file.
+
+## What about libsystemd (libsystemd-dev)?
+
+A recurring question: does `libsystemd` already provide the D-Bus wiring and, say,
+an `ActiveState` enum to compare against? Checked against the installed headers
+(`/usr/include/systemd/`, systemd 252):
+
+- **No public unit-state enum exists.** Grepping every public header for
+    `ActiveState` / `UnitActiveState` returns nothing. `ActiveState` is a D-Bus
+    string (`s`) on the wire, so *every* client — `sd-bus` or GLib's generated
+    proxy — receives it as a string. (systemd's source has an internal
+    `UnitActiveState` enum with `unit_active_state_from_string()`, but it is private
+    and unexported.) So you define your own `enum class` and convert the string at
+    the boundary; nothing in the dev package replaces that.
+- **What it does provide:** `sd-bus` (a D-Bus client stack, a lower-level
+    *alternative* to GLib + `gdbus-codegen` — no typed per-interface proxies),
+    `sd-event` (an event loop, an alternative to `GMainLoop`), and `sd-daemon`
+    (`sd_notify()`, `sd_notifyf()`, `sd_watchdog_enabled()` — the daemon-side
+    readiness/watchdog helpers).
+
+For this project the only overlap worth noting is `sd-daemon`: its `sd_notify` /
+`sd_watchdog_enabled` are exactly what the dummy daemon hand-rolls over the
+`NOTIFY_SOCKET`/`WATCHDOG_USEC` environment variables. The hand-rolled version is a
+deliberate choice to keep the daemon free of a `libsystemd` link dependency; adopting
+`sd-daemon` would trade that dependency for less boilerplate. Nothing in `libsystemd`
+helps the Supervisor's GDBus wiring or gives you a state enum.

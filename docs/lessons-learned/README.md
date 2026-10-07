@@ -30,3 +30,7 @@ model, then service-specific behavior.
     a `FLAGS_NONE` proxy's construction `GetAll` loads a dead unit (`UnitNew`) which
     systemd GCs again (`UnitRemoved`), turning a naive observer into an infinite
     loop — why the clean-stop debounce is correctness-critical.
+10. [Signal Callback Signatures](./010-notify-and-signal-callback-signatures.md):
+    deriving any GObject signal callback (instance first, `user_data` last), and the
+    surprise that `notify::` carries a `GParamSpec` middle argument — omit it and
+    `user_data` shifts into the wrong slot and segfaults.
