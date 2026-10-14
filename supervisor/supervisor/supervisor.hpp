@@ -105,7 +105,7 @@ protected:  // Internal methods
      * @param unitName  The unit's current object path.
      * @param userData  The Supervisor instance.
      */
-    static void onUnitNew(GDbusSystemd1Manager *object, const gchar *id, const gchar *unitName, gpointer userData);
+    static void onUnitNew(GDbusSystemd1Manager * pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
 
     /**
      * @brief Arms the removal debounce for a tracked unit (ADR 0007).
@@ -114,7 +114,7 @@ protected:  // Internal methods
      * @param unitName  The unit's object path (unused).
      * @param userData  The Supervisor instance.
      */
-    static void onUnitRemoved(GDbusSystemd1Manager *object, const gchar *id, const gchar *unitName, gpointer userData);
+    static void onUnitRemoved(GDbusSystemd1Manager * pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
 
     /**
      * @brief Fires when a tracked unit's removal debounce elapses un-cancelled.

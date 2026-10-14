@@ -113,7 +113,7 @@ public:  // Identity
      * @brief The unit name this monitor is keyed by.
      * @return The unit name passed at construction.
      */
-    const std::string &unitName() const { return m_UnitName; }
+    const std::string &getUnitName() const { return m_UnitName; }
 
 protected:  // Internal methods
 
