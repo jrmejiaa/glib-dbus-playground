@@ -14,13 +14,15 @@ UnitMonitor::UnitMonitor(GDbusSystemd1Unit *pUnit, GDbusSystemd1Service *pServic
       m_ObjectPath(rObjectPath),
       m_LastActiveState(active_state_t::unknown)
 {
-    log("Constructing object with unit-proxy=%p and service-proxy=%p. Attaching to signals.", pUnit, pService);
+    LOG_ENTER();
+    log("  - Constructing object with unit-proxy=%p and service-proxy=%p. Attaching to signals.", pUnit, pService);
     g_signal_connect(pUnit, "notify::active-state", G_CALLBACK(&UnitMonitor::onActiveStateChanged), this);
 }
 
 UnitMonitor::~UnitMonitor()
 {
-    log("Destructing object and freeing proxys");
+    LOG_ENTER();
+    log("  - Destructing object and freeing proxys");
     g_object_unref(m_pUnit);
     g_object_unref(m_pService);
 }

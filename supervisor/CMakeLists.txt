@@ -64,7 +64,7 @@ target_include_directories(systemd_unit_iface PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 
 # --- Executables ---------------------------------------------------------------
 
-# Dummy daemon: exports es.poc.Daemon, Type=notify, watchdog ping, fault trigger.
+# Dummy daemon: exports org.poc.Daemon, Type=notify, watchdog ping, fault trigger.
 add_executable(poc-daemon daemon/dummy-daemon.cpp)
 target_link_libraries(poc-daemon PRIVATE poc_daemon_iface PkgConfig::GIO)
 
@@ -74,6 +74,7 @@ add_executable(supervisor
     supervisor/supervisor.cpp
     supervisor/unit-monitor.cpp
     supervisor/systemd-enums.cpp
+    supervisor/daemon-state-watcher.cpp
 )
 target_link_libraries(supervisor PRIVATE systemd_manager_iface systemd_unit_iface poc_daemon_iface PkgConfig::GIO)
 

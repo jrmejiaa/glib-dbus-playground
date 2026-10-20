@@ -10,6 +10,7 @@
 #include <gdbus-systemd-manager.h>
 
 #include "unit-monitor.hpp"
+#include "daemon-state-watcher.hpp"
 
 /**
  * @brief Observes a fleet of dummy daemons over D-Bus and narrates their truth.
@@ -19,7 +20,8 @@
  * revives a daemon that stops cleanly (ADR 0007). It implements
  * IUnitMonitorEventSink to receive the classified failures its UnitMonitors detect.
  */
-class Supervisor : public IUnitMonitorEventSink
+class Supervisor : public IUnitMonitorEventSink,
+                   public IDaemonStateEventSink
 {
 public:  // Construction
 
@@ -63,6 +65,10 @@ protected:  // Interface IUnitMonitorEventSink (docs live on the interface)
     virtual void onResourcesFailure(const std::string unitName, const int restarts);
     virtual void onOomKillFailure(const std::string unitName, const int restarts);
 
+protected:  // Interface IDaemonStateEventSink
+
+    virtual void onDegradedState(const std::string unit);
+
 protected:  // Internal methods
 
     /**
@@ -105,7 +111,7 @@ protected:  // Internal methods
      * @param unitName  The unit's current object path.
      * @param userData  The Supervisor instance.
      */
-    static void onUnitNew(GDbusSystemd1Manager * pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
+    static void onUnitNew(GDbusSystemd1Manager *pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
 
     /**
      * @brief Arms the removal debounce for a tracked unit (ADR 0007).
@@ -114,7 +120,7 @@ protected:  // Internal methods
      * @param unitName  The unit's object path (unused).
      * @param userData  The Supervisor instance.
      */
-    static void onUnitRemoved(GDbusSystemd1Manager * pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
+    static void onUnitRemoved(GDbusSystemd1Manager *pManager, const gchar *unit, const gchar *objectPath, gpointer userData);
 
     /**
      * @brief Fires when a tracked unit's removal debounce elapses un-cancelled.
@@ -152,8 +158,9 @@ protected:  // Attributes
      */
     struct TrackedUnit
     {
-        std::shared_ptr<UnitMonitor> pMonitor;        ///< The Unit+Service proxies.
-        guint                        RemovalTimerId;  ///< 0 = ACTIVE; non-zero = PENDING_REMOVAL.
+        std::shared_ptr<UnitMonitor>        pMonitor;        ///< The Unit+Service proxies.
+        std::shared_ptr<DaemonStateWatcher> pWatcher;        ///< The daemon watcher on Dbus state
+        guint                               RemovalTimerId;  ///< 0 = ACTIVE; non-zero = PENDING_REMOVAL.
     };
 
     typedef std::map<std::string, std::shared_ptr<TrackedUnit>> unit_monitor_map_t;
@@ -162,10 +169,10 @@ protected:  // Attributes
     GDBusConnection      *m_pConnection;  ///< Shared session-bus connection; not owned.
     GDbusSystemd1Manager *m_pManager;     ///< Owned; unref in dtor.
 
-    std::set<std::string> m_Services;              ///< The unit names to supervise.
-    unit_monitor_map_t    m_UnitsByService;        ///< Tracked units keyed by name (identity survives GC).
-    bool                  m_ShuttingDown = false;  ///< Suppresses revival during teardown.
-    int                   m_ExitCode;              ///< Final process exit code.
+    std::set<std::string> m_Services;        ///< The unit names to supervise.
+    unit_monitor_map_t    m_UnitsByService;  ///< Tracked units keyed by name (identity survives GC).
+    bool                  m_ShuttingDown;    ///< Suppresses revival during teardown.
+    int                   m_ExitCode;        ///< Final process exit code.
 };
 
 #endif  // POC_SUPERVISOR_HPP

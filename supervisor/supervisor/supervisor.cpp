@@ -47,6 +47,8 @@ struct RemovalTimerCtx
 Supervisor::Supervisor(GMainLoop *pLoop, std::set<std::string> services)
     : m_pLoop(pLoop),
       m_Services(services),
+      m_UnitsByService(),
+      m_ShuttingDown(false),
       m_ExitCode(0)
 {
     LOG_ENTER();
@@ -101,8 +103,10 @@ void Supervisor::terminateOnError(const std::string &context, GError *pError)
         std::fprintf(stderr, "ERROR during %s: pError: (code=%i, message=%s)\n", context.c_str(), pError->code, pError->message);
         g_error_free(pError);
     }
-
-    std::fprintf(stderr, "ERROR during %s\n", context.c_str());
+    else
+    {
+        std::fprintf(stderr, "ERROR during %s\n", context.c_str());
+    }
     m_ExitCode = 1;
     terminate();
 }
@@ -118,6 +122,12 @@ void Supervisor::log(const char *pFormat, ...)
 
     std::fprintf(stdout, "\n");
     std::fflush(stdout);
+}
+
+void Supervisor::onDegradedState(const std::string unit)
+{
+    LOG_ENTER();
+    log("  - Degraded state detected on unit '%s', waiting on unitRemoved called to revive object", unit.c_str());
 }
 
 /* ######################################## Interface IUnitMonitorEventSink ######################################### */
@@ -302,7 +312,8 @@ void Supervisor::onUnitNew(GDbusSystemd1Manager * /*object*/, const gchar *unit,
     }
 
     auto pUnitMonitor = std::make_shared<UnitMonitor>(pUnit, pService, unit, objectPath, self);
-    self->m_UnitsByService.insert(std::make_pair(unit, std::make_shared<TrackedUnit>(std::move(pUnitMonitor), 0)));
+    auto pWatcher     = std::make_shared<DaemonStateWatcher>(self->m_pConnection, unit, self);
+    self->m_UnitsByService.insert(std::make_pair(unit, std::make_shared<TrackedUnit>(std::move(pUnitMonitor), std::move(pWatcher), 0)));
 }
 
 /* static */
@@ -366,5 +377,6 @@ gboolean Supervisor::onRemovalSettled(gpointer userData)
 /* static */
 void Supervisor::freeRemovalCtx(gpointer userData)
 {
-    delete static_cast<RemovalTimerCtx *>(userData); /* runs on both fire and cancel */
+    /* runs on both fire and cancel */
+    delete static_cast<RemovalTimerCtx *>(userData);
 }

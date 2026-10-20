@@ -64,7 +64,7 @@ int main()
     gp_Supervisor = new Supervisor(loop, {"poc-dummy@1.service", "poc-dummy@2.service", "poc-dummy@3.service"});
     gp_Supervisor->run();
 
-    /* it's safe to install signal handlers now, since the global alarm instance is created */
+    /* it's safe to install signal handlers now, since the global supervisor instance is created */
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
