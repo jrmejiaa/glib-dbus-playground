@@ -12,7 +12,7 @@
         EmitsChangedSignal=true: the daemon's PropertiesChanged carries the new
         value, so the Supervisor reacts to transitions without polling.
     -->
-    <interface name="es.poc.Daemon">
+    <interface name="org.poc.Daemon">
         <property name="State" type="u" access="read">
             <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true" />
         </property>

@@ -23,12 +23,12 @@ constexpr int INIT_DELAY_SECONDS = 2;
 constexpr int FAULT_EXIT_CODE = 42;
 
 /** @brief Fixed object path the interface is exported at (identity is the name). */
-constexpr const char *OBJECT_PATH = "/es/poc/Daemon";
+constexpr const char *OBJECT_PATH = "/org/poc/Daemon";
 
 /**
  * @brief Application-level readiness the daemon reports via its State property.
  *
- * Encoded on the wire as the uint32 values declared in es.poc.Daemon.xml.
+ * Encoded on the wire as the uint32 values declared in org.poc.Daemon.xml.
  */
 enum class state_t : guint
 {
@@ -88,7 +88,7 @@ public:  // Construction and flow
      * @brief Constructs the daemon for a given template instance id.
      * @param pLoop        The GMainLoop the daemon runs on. Not owned.
      * @param rInstanceId  The systemd template instance id (%i), selecting the
-     *                     well-known name es.poc.Daemon<id>.
+     *                     well-known name org.poc.Daemon<id>.
      */
     DummyDaemon(GMainLoop *pLoop, const std::string &rInstanceId);
 
@@ -179,9 +179,9 @@ private:  // Internal methods
 private:  // Attributes
 
     GMainLoop       *m_pLoop;          ///< Not owned.
-    PocDaemon       *m_pSkeleton;      ///< Owned; unref in dtor.
+    GDbusPocDaemon  *m_pSkeleton;      ///< Owned; unref in dtor.
     GDBusConnection *m_pConnection;    ///< Not owned; captured on bus acquisition.
-    std::string      m_WellKnownName;  ///< es.poc.Daemon<id>.
+    std::string      m_WellKnownName;  ///< org.poc.Daemon<id>.
     guint            m_BusNameId;      ///< g_bus_own_name source id.
     guint            m_WatchdogId;     ///< Watchdog timeout source id; 0 if none.
     int              m_ExitCode;       ///< Final process exit code.
@@ -189,9 +189,9 @@ private:  // Attributes
 
 DummyDaemon::DummyDaemon(GMainLoop *pLoop, const std::string &rInstanceId)
     : m_pLoop(pLoop),
-      m_pSkeleton(poc_daemon_skeleton_new()),
+      m_pSkeleton(gdbus_poc_daemon_skeleton_new()),
       m_pConnection(nullptr),
-      m_WellKnownName("es.poc.Daemon" + rInstanceId),
+      m_WellKnownName("org.poc.Daemon" + rInstanceId),
       m_BusNameId(0),
       m_WatchdogId(0),
       m_ExitCode(0)
@@ -225,7 +225,7 @@ void DummyDaemon::logLine(const std::string &rMsg)
 
 void DummyDaemon::setState(state_t state)
 {
-    poc_daemon_set_state(m_pSkeleton, static_cast<guint>(state));
+    gdbus_poc_daemon_set_state(m_pSkeleton, static_cast<guint>(state));
 }
 
 bool DummyDaemon::notify(const std::string &rPayload)
@@ -252,8 +252,7 @@ bool DummyDaemon::notify(const std::string &rPayload)
         return false;
     }
 
-    struct sockaddr_un addr
-    {};
+    struct sockaddr_un addr{};
 
     addr.sun_family = AF_UNIX;
     std::memcpy(addr.sun_path, socketPath.data(), socketPath.size());

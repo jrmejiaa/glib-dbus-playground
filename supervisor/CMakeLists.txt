@@ -22,9 +22,9 @@ endif()
 # Daemon's own interface: proxy (Supervisor consumes) + skeleton (daemon exports).
 gdbus_generate(
     BASENAME    gdbus-poc-daemon
-    XML         ${CMAKE_CURRENT_SOURCE_DIR}/introspect/es.poc.Daemon.xml
-    C_NAMESPACE Poc
-    IFC_PREFIX  es.poc.
+    XML         ${CMAKE_CURRENT_SOURCE_DIR}/introspect/org.poc.Daemon.xml
+    C_NAMESPACE GDbusPoc
+    IFC_PREFIX  org.poc.
     OUT_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/generated
     OUT_VAR     POC_DAEMON_SRC
 )

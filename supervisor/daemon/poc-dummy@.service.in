@@ -10,7 +10,7 @@ StartLimitAction=none
 
 [Service]
 Type=notify
-# %i is the template instance id, passed to the daemon to select es.poc.Daemon<N>.
+# %i is the template instance id, passed to the daemon to select org.poc.Daemon<N>.
 ExecStart=@DAEMON_PATH@ %i
 # systemd owns failure-revival; the daemon pings sd_notify(WATCHDOG=1) at
 # WatchdogSec/2 and a missed ping surfaces as Result=watchdog.
