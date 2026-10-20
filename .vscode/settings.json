@@ -7,6 +7,9 @@
         "gchar",
         "gdbus",
         "gpointer",
-        "iface"
+        "guint",
+        "iface",
+        "nrestarts",
+        "systemdctl"
     ]
 }

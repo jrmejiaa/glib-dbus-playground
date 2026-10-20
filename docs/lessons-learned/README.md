@@ -34,3 +34,12 @@ model, then service-specific behavior.
     deriving any GObject signal callback (instance first, `user_data` last), and the
     surprise that `notify::` carries a `GParamSpec` middle argument — omit it and
     `user_data` shifts into the wrong slot and segfaults.
+11. [EmitsChangedSignal Annotation](./011-emitschangedsignal-annotation.md): the
+    annotation is a contract, not a switch — it never grants `notify::`, an absent
+    annotation defaults to `true`, and the bit is load-bearing only on the
+    gdbus-codegen server (skeleton), never on the client proxy.
+12. [Unowned Proxy Returns Property Defaults](./012-unowned-proxy-returns-property-defaults.md):
+    a proxy for an unowned well-known name constructs fine but has an empty cache, so
+    typed getters return the type default (`0`) — which masquerades as a real
+    zero-value state; after a bus-name rename, a stale owner binary reproduces this
+    exactly. Guard with `g_dbus_proxy_get_name_owner()` / a `NULL` cached property.
